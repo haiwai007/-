@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Search, Layers3, Upload } from "lucide-react";
 import { Input } from "@/components/ui/input.tsx";
@@ -31,7 +31,8 @@ import { useWorks } from "@/hooks/use-works.ts";
 import { cn } from "@/lib/utils.ts";
 import CustomTemplateGrid from "./_components/custom-template-grid.tsx";
 
-type Sort = "popular" | "latest" | "name";
+type Sort = "category" | "popular" | "latest" | "name";
+const PAGE_SIZES = [24, 48, 96];
 
 export default function TemplatesPage() {
   const { templates: BUILTIN_TEMPLATES, categories: CATEGORIES } =
@@ -41,6 +42,10 @@ export default function TemplatesPage() {
       c.id,
       BUILTIN_TEMPLATES.filter((t) => t.category === c.id).length,
     ]),
+  );
+  const categoryOrder = useMemo(
+    () => new Map(CATEGORIES.map((c, i) => [c.id, i])),
+    [CATEGORIES],
   );
   const [params, setParams] = useSearchParams();
   const requestedCategory = params.get("category") ?? "all";
@@ -52,11 +57,16 @@ export default function TemplatesPage() {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("popular");
   const page = Math.max(1, Number(params.get("page")) || 1);
+  const requestedSize = Number(params.get("size"));
+  const pageSize = PAGE_SIZES.includes(requestedSize)
+    ? requestedSize
+    : TEMPLATE_PAGE_SIZE;
   const [onlyFav, setOnlyFav] = useState(false);
   const { favs, toggle } = useTemplateFavorites();
   const { start, busy } = useStartTemplate();
   const { state, refresh } = useWorks();
   const navigate = useNavigate();
+  const chipRow = useRef<HTMLDivElement>(null);
 
   const list = useMemo(() => {
     return BUILTIN_TEMPLATES.filter(
@@ -64,14 +74,17 @@ export default function TemplatesPage() {
     )
       .filter((t) => !onlyFav || favs.includes(t.id))
       .filter((t) => templateMatches(t, q))
-      .sort((a, b) =>
-        sort === "popular"
-          ? b.popularity - a.popularity
-          : sort === "latest"
-            ? b.addedAt.localeCompare(a.addedAt)
-            : a.name.localeCompare(b.name, "zh"),
-      );
-  }, [category, q, sort, onlyFav, favs, BUILTIN_TEMPLATES]);
+      .sort((a, b) => {
+        if (sort === "popular") return b.popularity - a.popularity;
+        if (sort === "latest") return b.addedAt.localeCompare(a.addedAt);
+        if (sort === "name") return a.name.localeCompare(b.name, "zh");
+        return (
+          (categoryOrder.get(a.category) ?? 99) -
+            (categoryOrder.get(b.category) ?? 99) ||
+          a.name.localeCompare(b.name, "zh")
+        );
+      });
+  }, [category, q, sort, onlyFav, favs, BUILTIN_TEMPLATES, categoryOrder]);
 
   const customTemplates =
     state.status === "ready"
@@ -99,12 +112,31 @@ export default function TemplatesPage() {
     ...CATEGORIES,
     { id: "custom", label: "自定义模板" },
   ];
-  const pageCount = Math.max(1, Math.ceil(list.length / TEMPLATE_PAGE_SIZE));
+  /** 全部模板按分类聚合展示,适合模板数量较多的分类库。 */
+  const grouped =
+    sort === "category" && category === "all" && !q.trim() && !onlyFav;
+  const groups = useMemo(() => {
+    if (!grouped) return [];
+    const map = new Map<string, (typeof list)[number][]>();
+    for (const t of list) {
+      const bucket = map.get(t.category);
+      if (bucket) bucket.push(t);
+      else map.set(t.category, [t]);
+    }
+    return [...map.entries()].map(([id, items]) => ({
+      id,
+      label:
+        items[0].categoryName ??
+        CATEGORIES.find((c) => c.id === id)?.label ??
+        id,
+      items,
+    }));
+  }, [grouped, list, CATEGORIES]);
+  const pageCount = Math.max(1, Math.ceil(list.length / pageSize));
   const currentPage = Math.min(Math.floor(page), pageCount);
-  const visibleList = list.slice(
-    (currentPage - 1) * TEMPLATE_PAGE_SIZE,
-    currentPage * TEMPLATE_PAGE_SIZE,
-  );
+  const visibleList = grouped
+    ? list
+    : list.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const changePage = (next: number) => {
     const nextParams = new URLSearchParams(params);
     nextParams.set("page", String(next));
@@ -117,6 +149,18 @@ export default function TemplatesPage() {
       setParams(next, { replace: true });
     }
   };
+  const changeSize = (next: number) => {
+    const nextParams = new URLSearchParams(params);
+    if (next === TEMPLATE_PAGE_SIZE) nextParams.delete("size");
+    else nextParams.set("size", String(next));
+    nextParams.delete("page");
+    setParams(nextParams);
+  };
+  useEffect(() => {
+    chipRow.current
+      ?.querySelector('[data-active="true"]')
+      ?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [category]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 md:px-6">
@@ -168,14 +212,18 @@ export default function TemplatesPage() {
           </select>
         </label>
       </div>
-      <div className="mt-6 hidden flex-wrap gap-2 sm:flex">
+      <div
+        ref={chipRow}
+        className="mt-6 hidden gap-2 overflow-x-auto pb-1 [scrollbar-width:thin] sm:flex"
+      >
         {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
+            data-active={category === t.id}
             onClick={() => setParams(t.id === "all" ? {} : { category: t.id })}
             className={cn(
-              "cursor-pointer rounded-full border px-4 py-1.5 text-sm transition-colors",
+              "shrink-0 cursor-pointer rounded-full border px-4 py-1.5 text-sm transition-colors",
               category === t.id
                 ? "border-primary bg-primary text-primary-foreground"
                 : "bg-card hover:border-primary",
@@ -221,8 +269,26 @@ export default function TemplatesPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="popular">最热门</SelectItem>
+            <SelectItem value="category">按分类</SelectItem>
             <SelectItem value="latest">最新</SelectItem>
             <SelectItem value="name">按名称</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={String(pageSize)}
+          onValueChange={(v) => {
+            changeSize(Number(v));
+          }}
+        >
+          <SelectTrigger aria-label="每页数量" className="sm:w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZES.map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                每页 {n} 套
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Button
@@ -242,8 +308,9 @@ export default function TemplatesPage() {
           aria-label="模板筛选结果"
           className="mt-4 text-sm text-muted-foreground"
         >
-          找到 {list.length} 套模板 · 每页 {TEMPLATE_PAGE_SIZE} 套
-          {pageCount > 1 && ` · 第 ${currentPage} / ${pageCount} 页`}
+          找到 {list.length} 套模板 · 每页 {pageSize} 套
+          {!grouped && pageCount > 1 && ` · 第 ${currentPage} / ${pageCount} 页`}
+          {grouped && ` · 已按分类聚合显示`}
         </p>
       )}
 
@@ -281,6 +348,31 @@ export default function TemplatesPage() {
             </Button>
           </EmptyContent>
         </Empty>
+      ) : grouped ? (
+        <div className="mt-6 space-y-8">
+          {groups.map((g) => (
+            <section key={g.id} aria-label={`分类 ${g.label}`}>
+              <div className="mb-3 flex items-baseline gap-2">
+                <h2 className="font-serif text-xl font-bold">{g.label}</h2>
+                <span className="text-sm text-muted-foreground">
+                  {g.items.length} 套
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+                {g.items.map((t) => (
+                  <TemplateCard
+                    key={t.id}
+                    template={t}
+                    favorite={favs.includes(t.id)}
+                    onToggleFavorite={() => toggle(t.id)}
+                    onUse={() => start(t.id)}
+                    busy={busy === t.id}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {visibleList.map((t) => (
@@ -296,7 +388,7 @@ export default function TemplatesPage() {
         </div>
       )}
 
-      {category !== "custom" && pageCount > 1 && (
+      {category !== "custom" && !grouped && pageCount > 1 && (
         <nav
           aria-label="模板分页"
           className="mt-6 flex flex-wrap items-center justify-center gap-2"
