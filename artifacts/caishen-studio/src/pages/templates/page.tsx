@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils.ts";
 import CustomTemplateGrid from "./_components/custom-template-grid.tsx";
 
 type Sort = "category" | "popular" | "latest" | "name";
+const SORTS: Sort[] = ["category", "popular", "latest", "name"];
 const PAGE_SIZES = [24, 48, 96];
 
 export default function TemplatesPage() {
@@ -55,7 +56,15 @@ export default function TemplatesPage() {
       ? requestedCategory
       : "all";
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState<Sort>("popular");
+  const requestedSort = (params.get("sort") ?? "") as Sort;
+  const sort: Sort = SORTS.includes(requestedSort) ? requestedSort : "popular";
+  const setSort = (next: Sort) => {
+    const nextParams = new URLSearchParams(params);
+    if (next === "popular") nextParams.delete("sort");
+    else nextParams.set("sort", next);
+    nextParams.delete("page");
+    setParams(nextParams);
+  };
   const page = Math.max(1, Number(params.get("page")) || 1);
   const requestedSize = Number(params.get("size"));
   const pageSize = PAGE_SIZES.includes(requestedSize)
@@ -261,7 +270,6 @@ export default function TemplatesPage() {
           value={sort}
           onValueChange={(v) => {
             setSort(v as Sort);
-            resetPage();
           }}
         >
           <SelectTrigger className="sm:w-40">

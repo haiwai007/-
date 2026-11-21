@@ -70,6 +70,7 @@ pnpm build:studio    # 生成 artifacts/caishen-studio/dist/public
 | [部署指南](docs/DEPLOYMENT.zh-CN.md) | 当前 Cloudflare Pages＋D1＋R2 部署方式 |
 | [管理指南](docs/ADMIN_CMS.zh-CN.md) | 分类、模板发布、投稿审核、弹窗与密码 |
 | [开发说明](docs/DEVELOPMENT.zh-CN.md) | 目录、命令、测试、兼容与维护 |
+| [旺财模板库](docs/WANGCAI_TEMPLATES.zh-CN.md) | 201 套采集模板的分类、排序、维护与发布 |
 | [来源与许可](docs/ATTRIBUTIONS.zh-CN.md) | 字体、图标、图片及校准资料 |
 
 项目许可见 [LICENSE](LICENSE)，第三方素材适用各自许可。
