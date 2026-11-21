@@ -10,8 +10,7 @@ const DIR = arg('dir', 'out/templates');
 const THUMBS = arg('thumbs', 'out/deliver/thumbs');
 const DB = arg('db', 'haishen-catalog');
 const BUCKET = arg('bucket', 'haishen-template-files');
-// 默认使用仓库本地安装的 wrangler,没有则回退到 npx
-const WRANGLER = arg('wrangler', fs.existsSync('node_modules/wrangler/bin/wrangler.js') ? 'node_modules/wrangler/bin/wrangler.js' : '');
+const WRANGLER = arg('wrangler', 'node_modules/wrangler/bin/wrangler.js');
 const CONCURRENCY = Number(arg('concurrency', '8')) || 8;
 const DRY = flag('dry-run');
 const SKIP_OBJECTS = flag('skip-objects');
@@ -23,9 +22,7 @@ const CATEGORY_POSITION_BASE = 100;
 
 function run(args, { silent = true } = {}) {
   return new Promise((resolve, reject) => {
-    const command = WRANGLER ? process.execPath : 'npx';
-    const argv = WRANGLER ? [WRANGLER, ...args] : ['--yes', 'wrangler@4', ...args];
-    const child = spawn(command, argv, { stdio: ['ignore', 'pipe', 'pipe'], shell: !WRANGLER });
+    const child = spawn(process.execPath, [WRANGLER, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '';
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { err += d; });

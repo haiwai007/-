@@ -1,14 +1,15 @@
-﻿import { connect, sleep } from './cdp.mjs';
+import { connect, sleep } from './cdp.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// 閲嶆柊鎶撳彇鎸囧畾椤甸潰(鐢ㄤ簬淇琚鍒?灏哄寮傚父鐨勬ā鏉?銆?const OUT = process.argv[2] || 'out/templates';
+// 重新抓取指定页面(用于修正被裁切或尺寸异常的模板)。
+const OUT = process.argv[2] || 'out/templates';
 const routes = process.argv.slice(3);
 const SCALE = 3;
 
 const cdp = await connect();
 await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
-const allw = fs.readFileSync('scripts/wangcai/catalog.json', 'utf8');
+const allw = fs.readFileSync('wc/allw.clean.json', 'utf8');
 await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { try {
   localStorage.setItem('c9008d17682b448aaefbcb518c293a49', 'FAKETOKEN');
   localStorage.setItem('ad71074198ed4c319d00a6fdc4eef50e', String(Date.now()));
@@ -32,11 +33,26 @@ cdp.ws.addEventListener('message', async ev => {
 });
 await cdp.send('Page.navigate', { url: 'https://web.wcztonline.com/4dfe11ca03234c15accd895ab0d1b318.html' });
 await sleep(12000);
-const b = await cdp.evaluate(`(() => { const els=[...document.querySelectorAll('.itme')].filter(e=>(e.innerText||'').trim().startsWith('鍥炲崟')); const r=els[0].getBoundingClientRect(); return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2}); })()`);
-const { x, y } = JSON.parse(b);
-for (const t of ['mousePressed', 'mouseReleased']) await cdp.send('Input.dispatchMouseEvent', { type: t, x, y, button: 'left', clickCount: 1 });
-await sleep(2500);
-await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1200, deviceScaleFactor: 1, mobile: false }).catch(() => {});
+const clickGroup = async (label) => cdp.evaluate(`(() => {
+  const els=[...document.querySelectorAll('.itme')].filter(e=>(e.innerText||'').trim().startsWith(${JSON.stringify(label)}));
+  if(!els.length) return 'nf';
+  const r=els[0].getBoundingClientRect();
+  return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2});
+})()`);
+let box = await clickGroup('回单');
+if (box === 'nf') {
+  await cdp.evaluate(`(()=>{const a=document.querySelector('#app'); if(a&&a.__vue_app__) a.__vue_app__.config.globalProperties.$router.push('/home'); return 1;})()`);
+  await sleep(6000);
+  box = await clickGroup('回单');
+}
+if (box !== 'nf') {
+  const { x, y } = JSON.parse(box);
+  for (const t of ['mousePressed', 'mouseReleased']) await cdp.send('Input.dispatchMouseEvent', { type: t, x, y, button: 'left', clickCount: 1 });
+  await sleep(2500);
+} else {
+  console.log('warning: group list not found, continuing');
+}
+await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false }).catch(() => {});
 await sleep(1200);
 
 const EXTRACT = (route) => `(async () => {
@@ -88,7 +104,7 @@ const EXTRACT = (route) => `(async () => {
   return { w: +rr.width.toFixed(2), h: +rr.height.toFixed(2), x: +rr.x.toFixed(2), y: +rr.y.toFixed(2), fields, fieldCount: (ds.dataConfig || []).length, clipped };
 })()`;
 
-const catalog = JSON.parse(fs.readFileSync('scripts/wangcai/catalog.json', 'utf8'));
+const catalog = JSON.parse(fs.readFileSync('wc/allw.clean.json', 'utf8'));
 const jobs = [];
 for (const g of catalog) for (const it of (g.itme || [])) if (it.url && it.url.startsWith('/images/pages/')) jobs.push({ route: it.url, group: g.title, title: it.title });
 
@@ -123,6 +139,5 @@ for (const route of routes) {
   console.log('閲嶆姄', key, `${canvasW}x${canvasH}`, 'fields=' + params.length + '/' + info.fieldCount, 'clipped=' + info.clipped);
 }
 cdp.close(); process.exit(0);
-
 
 

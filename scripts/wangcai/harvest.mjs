@@ -1,4 +1,4 @@
-﻿// Harvest 鏃鸿储浣滃浘 local template pages -> .haishen.json packages
+// Harvest 旺财作图 local template pages -> .haishen.json packages
 import { connect, sleep } from './cdp.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,7 +7,7 @@ const OUT = process.argv[2] || 'out/templates';
 const LIMIT = Number(process.argv[3] || 999);
 fs.mkdirSync(OUT, { recursive: true });
 
-const catalog = JSON.parse(fs.readFileSync('scripts/wangcai/catalog.json', 'utf8'));
+const catalog = JSON.parse(fs.readFileSync('wc/allw.clean.json', 'utf8'));
 const jobs = [];
 for (const g of catalog) for (const it of (g.itme || [])) {
   if (it.url && it.url.startsWith('/images/pages/')) jobs.push({ route: it.url, group: g.title, title: it.title });
@@ -16,7 +16,7 @@ console.log('local templates:', jobs.length);
 
 const cdp = await connect();
 await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
-const allw = fs.readFileSync('scripts/wangcai/catalog.json', 'utf8');
+const allw = fs.readFileSync('wc/allw.clean.json', 'utf8');
 await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { try {
   localStorage.setItem('c9008d17682b448aaefbcb518c293a49', 'FAKETOKEN');
   localStorage.setItem('ad71074198ed4c319d00a6fdc4eef50e', String(Date.now()));
@@ -42,7 +42,7 @@ cdp.ws.addEventListener('message', async ev => {
 await cdp.send('Page.navigate', { url: 'https://web.wcztonline.com/4dfe11ca03234c15accd895ab0d1b318.html' });
 await sleep(12000);
 // open a group so the editor route is live
-const b = await cdp.evaluate(`(() => { const els=[...document.querySelectorAll('.itme')].filter(e=>(e.innerText||'').trim().startsWith('鍥炲崟')); if(!els.length) return 'nf'; const r=els[0].getBoundingClientRect(); return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2}); })()`);
+const b = await cdp.evaluate(`(() => { const els=[...document.querySelectorAll('.itme')].filter(e=>(e.innerText||'').trim().startsWith('回单')); if(!els.length) return 'nf'; const r=els[0].getBoundingClientRect(); return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2}); })()`);
 if (b !== 'nf') { const { x, y } = JSON.parse(b); for (const t of ['mousePressed', 'mouseReleased']) await cdp.send('Input.dispatchMouseEvent', { type: t, x, y, button: 'left', clickCount: 1 }); }
 await sleep(3000);
 // make a wide viewport for stable layout
@@ -98,9 +98,31 @@ const EXTRACT = (route) => `(async () => {
       if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') { bg = c; break; }
     }
     const hex = (c) => { const m = /rgba?\\((\\d+), ?(\\d+), ?(\\d+)/.exec(c); if (!m) return '#ffffff'; return '#' + [1,2,3].map(i => (+m[i]).toString(16).padStart(2,'0')).join(''); };
+    // 预览里的手机画面通常带 CSS transform 缩放:getBoundingClientRect 已缩放,
+    // 而 getComputedStyle().fontSize 仍是设计尺寸,必须乘上实际缩放系数才能对齐。
+    // 预览里的手机画面通常带一层 CSS transform 缩放:getBoundingClientRect 已缩放,
+    // 而 getComputedStyle().fontSize 仍是设计尺寸。整条祖先链共享同一个缩放系数,
+    // 因此取第一个不为 1 的 宽/offsetWidth 比值即为真实缩放。
+    let k = 1;
+    for (let p = el; p && p !== res; p = p.parentElement) {
+      const ow = p.offsetWidth;
+      if (!ow) continue;
+      const s = p.getBoundingClientRect().width / ow;
+      if (Math.abs(s - 1) <= 0.01) continue;
+      if (s > 0.05 && s < 5) k = s;
+      break;
+    }
+    const designFont = parseFloat(cs.fontSize) || 0;
+    let fontPx = designFont * k;
+    if (!(fontPx > 0.5)) fontPx = Math.min(r.height || 12, 12);
+    if (fontPx > r.height * 1.6) fontPx = r.height * 1.6;
+    fontPx = +fontPx.toFixed(2);
+    const lh = parseFloat(cs.lineHeight);
+    const lineRatio = Number.isFinite(lh) && designFont > 0 ? +(lh / designFont).toFixed(3) : 1.2;
     fields.push({ field: cfg.field, title: cfg.title || cfg.placeholder || cfg.field, type: cfg.type || 'text', value: val, bgColor: hex(bg),
       x: +(r.x - rr.x).toFixed(2), y: +(r.y - rr.y).toFixed(2), w: +r.width.toFixed(2), h: +r.height.toFixed(2),
-      fontSize: parseFloat(cs.fontSize), fontFamily: cs.fontFamily, fontWeight: cs.fontWeight, color: cs.color, textAlign: cs.textAlign, lineHeight: cs.lineHeight, letterSpacing: cs.letterSpacing });
+      fontSize: fontPx, fontFamily: cs.fontFamily, fontWeight: cs.fontWeight, color: cs.color, textAlign: cs.textAlign,
+      lineHeight: Math.min(1.8, Math.max(1, lineRatio)), transformScale: +k.toFixed(4) });
   }
   return { w: +rr.width.toFixed(2), h: +rr.height.toFixed(2), x: +rr.x.toFixed(2), y: +rr.y.toFixed(2), fields, fieldCount: (ds.dataConfig || []).length };
 })()`;
@@ -121,26 +143,24 @@ for (const job of jobs.slice(0, LIMIT)) {
     const png = Buffer.from(shot.data, 'base64');
     const assetId = 'asset_bg';
     const canvasW = Math.round(info.w * SCALE), canvasH = Math.round(info.h * SCALE);
-    const layers = [{ id: 'bg', name: '鑳屾櫙', type: 'image', x: 0, y: 0, width: canvasW, height: canvasH, rotation: 0, opacity: 1, visible: true, locked: true, editable: true, groupId: null, layout: 'fixed',
+    const layers = [{ id: 'bg', name: '背景', type: 'image', x: 0, y: 0, width: canvasW, height: canvasH, rotation: 0, opacity: 1, visible: true, locked: true, editable: true, groupId: null, layout: 'fixed',
       src: { kind: 'asset', assetId }, fit: 'cover', focusX: 0.5, focusY: 0.5, cropZoom: 1, radius: 0, lockAspect: false, autoFocus: false }];
     const params = [];
     let n = 0;
     for (const f of info.fields) {
       n++;
       const x = +(f.x * SCALE).toFixed(1), y = +(f.y * SCALE).toFixed(1), w = +(Math.max(f.w, 8) * SCALE).toFixed(1), h = +(Math.max(f.h, f.fontSize) * SCALE).toFixed(1);
-      const pad = 2 * SCALE;
-      const maskId = 'mask_' + n, textId = 'text_' + n;
-      layers.push({ id: maskId, name: '閬僵锛? + f.title, type: 'rect', x: +(x - pad).toFixed(1), y: +(y - pad * 0.6).toFixed(1), width: +(w + pad * 2).toFixed(1), height: +(h + pad * 1.2).toFixed(1), rotation: 0, opacity: 1, visible: true, locked: false, editable: true, groupId: null, layout: 'relative', fill: f.bgColor || '#ffffff', stroke: '#000000', strokeWidth: 0, radius: 0, shadow: null, isMask: true });
+      const pad = 2 * SCALE, textId = 'text_' + n;
       layers.push({ id: textId, name: f.title, type: 'text', x, y, width: w, height: h, rotation: 0, opacity: 1, visible: true, locked: false, editable: true, groupId: null, layout: 'relative',
         text: f.value, fontFamily: 'Noto Sans SC', fontSize: +(f.fontSize * SCALE).toFixed(1), fontWeight: /bold|[6-9]00/.test(String(f.fontWeight)) ? 'bold' : 'normal', fontStyle: 'normal',
-        fill: f.color, textAlign: ['left', 'center', 'right'].includes(f.textAlign) ? f.textAlign : 'left', verticalAlign: 'middle', lineHeight: 1.2, letterSpacing: 0, wrap: false, autoShrink: true, autoGrow: false, minFontSize: 8, maxLines: 1, shadow: null });
+        fill: f.color, textAlign: ['left', 'center', 'right'].includes(f.textAlign) ? f.textAlign : 'left', verticalAlign: 'middle', lineHeight: f.lineHeight || 1.2, letterSpacing: 0, wrap: false, autoShrink: true, autoGrow: false, minFontSize: 8, maxLines: 1, shadow: null });
       params.push({ id: 'param_' + n, name: f.title, type: f.type === 'date' ? 'date' : 'text', layerId: textId, property: 'text', defaultValue: f.value, required: false, editable: true, allowEmpty: true,
-        rules: f.type === 'date' ? { datePrecision: 'minute' } : {}, group: '鍐呭', description: '', placeholder: '',
+        rules: f.type === 'date' ? { datePrecision: 'minute' } : {}, group: '内容', description: '', placeholder: '',
         cleanup: { mode: 'solid', color: f.bgColor || '#ffffff', src: null, follow: true, rect: { x: +(x - pad).toFixed(1), y: +(y - pad * 0.6).toFixed(1), width: +(w + pad * 2).toFixed(1), height: +(h + pad * 1.2).toFixed(1) } } });
     }
     const pkg = { format: 'caishen-template', formatVersion: 1, exportedAt: new Date().toISOString(),
       doc: { schemaVersion: 1, templateId: 'wc_' + key, name: (job.group ? job.group + ' - ' : '') + job.title, canvas: { width: canvasW, height: canvasH, backgroundColor: '#ffffff', backgroundImage: null }, layers, parameters: params, source: null },
-      assets: [{ id: assetId, name: '鑳屾櫙', mime: 'image/png', width: canvasW, height: canvasH, data: png.toString('base64') }] };
+      assets: [{ id: assetId, name: '背景', mime: 'image/png', width: canvasW, height: canvasH, data: png.toString('base64') }] };
     fs.writeFileSync(file, JSON.stringify(pkg));
     done.push(key);
     console.log(`[${i}/${jobs.length}] ${key} fields=${params.length}/${info.fieldCount} size=${canvasW}x${canvasH} ${Date.now() - t0}ms`);
@@ -148,4 +168,3 @@ for (const job of jobs.slice(0, LIMIT)) {
 }
 console.log('done', done.length);
 cdp.close(); process.exit(0);
-

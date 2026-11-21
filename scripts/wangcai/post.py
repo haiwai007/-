@@ -1,4 +1,4 @@
-﻿"""Post-process harvested 鏃鸿储 templates: thumbnails, manifest, validation.
+"""Post-process harvested 旺财 templates: thumbnails, manifest, validation.
 
 Usage:
   python post.py <templates_dir> <catalog_json> <out_dir>
@@ -14,23 +14,23 @@ import sys
 from PIL import Image
 
 TEMPLATES_DIR = sys.argv[1] if len(sys.argv) > 1 else "out/templates"
-CATALOG = sys.argv[2] if len(sys.argv) > 2 else "scripts/wangcai/catalog.json"
+CATALOG = sys.argv[2] if len(sys.argv) > 2 else "wc/allw.clean.json"
 OUT_DIR = sys.argv[3] if len(sys.argv) > 3 else "out/deliver"
 
 THUMB_MAX_H = 1024
 THUMB_MAX_SIDE = 2048
 
-# 鏃鸿储 group code -> 娴风 category (created on demand by the uploader)
+# 旺财 group code -> 海神 category (created on demand by the uploader)
 CODE_TO_CATEGORY = {
-    "yinhang": ("yinhang", "鍥藉唴閾惰"),
-    "wangluoqianbao": ("wangluoqianbao", "缃戠粶閽卞寘"),
-    "liaotian": ("liaotian", "鑱婂ぉ鐢熸垚"),
-    "haiwaiyinhang": ("haiwaiyinhang", "娴峰閾惰"),
-    "jiamihuobi": ("jiamihuobi", "鍔犲瘑璐у竵"),
-    "gubiao": ("gubiao", "鑲＄エ璇佸埜"),
-    "jipiao": ("jipiao", "鏈虹エ閰掑簵"),
-    "zhengjian": ("zhengjian", "璇佷欢鍚堟垚"),
-    "zhongguo": ("zhongguo", "瀹氬埗妯℃嫙"),
+    "yinhang": ("yinhang", "国内银行"),
+    "wangluoqianbao": ("wangluoqianbao", "网络钱包"),
+    "liaotian": ("liaotian", "聊天生成"),
+    "haiwaiyinhang": ("haiwaiyinhang", "海外银行"),
+    "jiamihuobi": ("jiamihuobi", "加密货币"),
+    "gubiao": ("gubiao", "股票证券"),
+    "jipiao": ("jipiao", "机票酒店"),
+    "zhengjian": ("zhengjian", "证件合成"),
+    "zhongguo": ("zhongguo", "定制模拟"),
 }
 
 TYPE_ENUM = {
@@ -166,7 +166,7 @@ def main():
         key = name[: -len(".haishen.json")]
         route = "/images/pages/" + key.replace("__", "/")
         group, code = routes.get(route, ("", ""))
-        cat_id, cat_label = CODE_TO_CATEGORY.get(code, ("general", "閫氱敤鍥炬枃璁捐"))
+        cat_id, cat_label = CODE_TO_CATEGORY.get(code, ("general", "通用图文设计"))
         asset = pkg["assets"][0]
         raw = base64.b64decode(asset["data"])
         try:
@@ -221,4 +221,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
